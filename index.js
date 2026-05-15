@@ -2,21 +2,33 @@ require('dotenv').config();
 
 const express = require('express');
 const twilio = require('twilio');
-
-const { generateReply } = require('./ai');
+const { OpenAI } = require('openai');
 
 const app = express();
 const handledMissedCalls = new Map();
+const conversations = new Map();
 
 const MISSED_CALL_TEXT = 'Hi! Sorry we missed your call. How can we help you today?';
 const MISSED_CALL_TTL_MS = 6 * 60 * 60 * 1000;
 const FALLBACK_DEDUPE_WINDOW_MS = 2 * 60 * 1000;
+const MAX_MESSAGES_PER_CONVERSATION = 20;
 
 // Add these values in Replit using the Secrets panel:
 // TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_NUMBER, OPENAI_API_KEY
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
+
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
+
+const SYSTEM_PROMPT = `
+You are a helpful, polite assistant for a local San Diego business.
+Keep replies concise for SMS. Ask clarifying questions when needed.
+Collect name, intent, and urgency level. If there is an emergency,
+ask the customer to call 911 immediately.
+`.trim();
 
 function isMissedCall(callStatus) {
   return ['busy', 'canceled', 'failed', 'no-answer'].includes(String(callStatus || '').toLowerCase());
@@ -39,13 +51,73 @@ async function sendMissedCallText(to) {
     return false;
   }
 
-  await client.messages.create({
-    body: MISSED_CALL_TEXT,
-    from: process.env.TWILIO_NUMBER,
-    to
-  });
+  try {
+    await client.messages.create({
+      body: MISSED_CALL_TEXT,
+      from: process.env.TWILIO_NUMBER,
+      to
+    });
+  } catch (error) {
+    console.error('Twilio dispatch failed:', error);
+    return false;
+  }
 
   return true;
+}
+
+function getConversation(phoneNumber) {
+  if (!conversations.has(phoneNumber)) {
+    conversations.set(phoneNumber, []);
+  }
+
+  return conversations.get(phoneNumber);
+}
+
+function appendConversation(phoneNumber, role, content) {
+  if (!content) {
+    return;
+  }
+
+  const messages = getConversation(phoneNumber);
+  messages.push({ role, content });
+
+  if (messages.length > MAX_MESSAGES_PER_CONVERSATION) {
+    messages.splice(0, messages.length - MAX_MESSAGES_PER_CONVERSATION);
+  }
+}
+
+async function getAiReply(phoneNumber, incomingMessage) {
+  const normalizedMessage = String(incomingMessage || '').trim();
+  const fallbackReply = normalizedMessage
+    ? 'Thanks for texting us. We received your message and a team member will follow up shortly.'
+    : 'Hi! Thanks for reaching out. How can we help you today?';
+
+  if (!openai) {
+    return fallbackReply;
+  }
+
+  if (normalizedMessage) {
+    appendConversation(phoneNumber, 'user', normalizedMessage);
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.4,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...getConversation(phoneNumber)
+      ]
+    });
+
+    const aiReply = completion.choices[0].message.content;
+    const replyText = typeof aiReply === 'string' && aiReply.trim() ? aiReply.trim() : fallbackReply;
+    appendConversation(phoneNumber, 'assistant', replyText);
+    return replyText;
+  } catch (error) {
+    console.error('OpenAI API call failed:', error);
+    return fallbackReply;
+  }
 }
 
 function pruneHandledMissedCalls() {
@@ -82,15 +154,8 @@ app.post('/webhook/voice', async (req, res) => {
   }
 
   handledMissedCalls.set(dedupeKey, Date.now());
-
-  try {
-    const textSent = await sendMissedCallText(From);
-    return res.json({ ok: true, textSent });
-  } catch (error) {
-    handledMissedCalls.delete(dedupeKey);
-    console.error('Failed to send missed-call text:', error);
-    return res.status(500).json({ ok: false, textSent: false });
-  }
+  const textSent = await sendMissedCallText(From);
+  return res.json({ ok: true, textSent });
 });
 
 app.post('/webhook/sms', async (req, res) => {
@@ -101,34 +166,19 @@ app.post('/webhook/sms', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Missing From number.' });
   }
 
-  try {
-    const { reply, lead } = await generateReply(from, body);
+  const reply = await getAiReply(from, body);
+  const messagingResponse = new twilio.twiml.MessagingResponse();
+  messagingResponse.message(reply);
 
-    if (lead?.conversationComplete) {
-      console.log('Qualified lead:', JSON.stringify({ phoneNumber: from, lead }));
-    }
-
-    const messagingResponse = new twilio.twiml.MessagingResponse();
-    messagingResponse.message(reply);
-
-    res.type('text/xml');
-    return res.send(messagingResponse.toString());
-  } catch (error) {
-    console.error('Failed to process SMS webhook:', error);
-
-    const messagingResponse = new twilio.twiml.MessagingResponse();
-    messagingResponse.message('Thanks for texting us. We had a temporary issue, but a team member will follow up shortly.');
-
-    res.type('text/xml');
-    return res.send(messagingResponse.toString());
-  }
+  res.type('text/xml');
+  return res.send(messagingResponse.toString());
 });
 
 if (require.main === module) {
-  const port = Number(process.env.PORT) || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
-  app.listen(port, '0.0.0.0', () => {
-    console.log(`Server listening on http://0.0.0.0:${port}`);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server listening on http://0.0.0.0:${PORT}`);
   });
 }
 
