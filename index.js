@@ -12,6 +12,7 @@ const TEMP_LEADS_DATA_FILE = path.join(__dirname, 'index.json.tmp');
 const VALID_INTENTS = ['Booking', 'Inquiry', 'Maintenance Emergency'];
 const VALID_URGENCY_LEVELS = ['Routine', 'URGENT'];
 const SAFE_PHONE_REGEX = /^\+?\d{7,15}$/;
+const HISTORY_LIMIT = 10;
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -77,10 +78,10 @@ function loadStore() {
   }
 }
 
-function saveStore(store) {
+async function saveStore(store) {
   const safeData = JSON.stringify(store, null, 2);
-  fs.writeFileSync(TEMP_LEADS_DATA_FILE, safeData, 'utf8');
-  fs.renameSync(TEMP_LEADS_DATA_FILE, LEADS_DATA_FILE);
+  await fs.promises.writeFile(TEMP_LEADS_DATA_FILE, safeData, 'utf8');
+  await fs.promises.rename(TEMP_LEADS_DATA_FILE, LEADS_DATA_FILE);
 }
 
 let store = loadStore();
@@ -148,7 +149,7 @@ async function generateAiReplyAndMetadata(lead, inboundMessage) {
     };
   }
 
-  const history = lead.messages.slice(-10).map((entry) => ({
+  const history = lead.messages.slice(-HISTORY_LIMIT).map((entry) => ({
     role: entry.role,
     content: entry.text
   }));
@@ -238,7 +239,12 @@ app.post('/api/inbound', async (req, res) => {
       text: 'Missed call detected.',
       at: new Date().toISOString()
     });
-    saveStore(store);
+    try {
+      await saveStore(store);
+    } catch (error) {
+      console.error('Failed to persist missed-call update.', error);
+      return res.status(500).json({ error: 'Failed to persist lead state.' });
+    }
     return res.json({ ok: true, lead });
   }
 
@@ -275,7 +281,12 @@ app.post('/api/inbound', async (req, res) => {
   }
 
   lead.updated_at = new Date().toISOString();
-  saveStore(store);
+  try {
+    await saveStore(store);
+  } catch (error) {
+    console.error('Failed to persist SMS update.', error);
+    return res.status(500).json({ error: 'Failed to persist lead state.' });
+  }
 
   return res.json({ ok: true, lead });
 });

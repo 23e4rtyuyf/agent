@@ -2,6 +2,7 @@ const state = {
   leads: [],
   selectedPhone: null
 };
+const POLL_INTERVAL_MS = 10000;
 
 function escapeHtml(value) {
   return String(value || '')
@@ -135,4 +136,4 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, 5000);
+setInterval(refresh, POLL_INTERVAL_MS);
