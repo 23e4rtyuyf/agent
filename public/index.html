@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leads Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-slate-100 text-slate-800 min-h-screen">
+    <div class="max-w-7xl mx-auto p-4 md:p-6">
+      <header class="mb-6">
+        <h1 class="text-2xl md:text-3xl font-bold">Admin Dashboard</h1>
+        <p class="text-slate-500">Live lead tracking for calls and SMS conversations</p>
+      </header>
+
+      <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+          <p class="text-sm text-slate-500">Total Calls Captured</p>
+          <p id="total-calls" class="text-3xl font-semibold">0</p>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm p-4 border border-slate-200">
+          <p class="text-sm text-slate-500">Active Text Threads</p>
+          <p id="active-threads" class="text-3xl font-semibold">0</p>
+        </div>
+        <div class="bg-red-50 rounded-xl shadow-sm p-4 border border-red-200">
+          <p class="text-sm text-red-600">Urgent Leads</p>
+          <p id="urgent-leads" class="text-3xl font-semibold text-red-700">0</p>
+        </div>
+      </section>
+
+      <section class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-[320px,1fr] min-h-[560px]">
+          <aside class="border-r border-slate-200 bg-slate-50">
+            <div class="p-4 border-b border-slate-200">
+              <h2 class="font-semibold">Leads</h2>
+              <p class="text-sm text-slate-500">Newest activity first</p>
+            </div>
+            <div id="lead-list" class="overflow-y-auto max-h-[520px]"></div>
+          </aside>
+
+          <main class="flex flex-col">
+            <div id="thread-header" class="p-4 border-b border-slate-200">
+              <h2 class="font-semibold">Conversation</h2>
+              <p class="text-sm text-slate-500">Select a lead to view message history</p>
+            </div>
+            <div id="chat-log" class="flex-1 p-4 space-y-3 overflow-y-auto bg-gradient-to-b from-slate-50 to-white"></div>
+          </main>
+        </div>
+      </section>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

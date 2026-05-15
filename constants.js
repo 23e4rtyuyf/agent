@@ -1,0 +1,5 @@
+const MAX_MESSAGES_PER_CONVERSATION = 20;
+
+module.exports = {
+  MAX_MESSAGES_PER_CONVERSATION
+};
