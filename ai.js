@@ -95,16 +95,29 @@ function pruneConversations() {
   }
 
   while (conversationStore.size > MAX_CONVERSATIONS) {
-    const oldestEntry = conversationTouchedAt.entries().next().value;
+    const oldestPhoneNumber = getOldestConversationPhoneNumber();
 
-    if (!oldestEntry) {
+    if (!oldestPhoneNumber) {
       break;
     }
 
-    const [phoneNumber] = oldestEntry;
-    conversationTouchedAt.delete(phoneNumber);
-    conversationStore.delete(phoneNumber);
+    conversationTouchedAt.delete(oldestPhoneNumber);
+    conversationStore.delete(oldestPhoneNumber);
   }
+}
+
+function getOldestConversationPhoneNumber() {
+  let oldestPhoneNumber = null;
+  let oldestTouchedAt = Number.POSITIVE_INFINITY;
+
+  for (const [phoneNumber, lastTouchedAt] of conversationTouchedAt.entries()) {
+    if (lastTouchedAt < oldestTouchedAt) {
+      oldestPhoneNumber = phoneNumber;
+      oldestTouchedAt = lastTouchedAt;
+    }
+  }
+
+  return oldestPhoneNumber;
 }
 
 function getOpenAIClient() {
