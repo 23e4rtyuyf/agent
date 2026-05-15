@@ -6,9 +6,10 @@ const twilio = require('twilio');
 const { generateReply } = require('./ai');
 
 const app = express();
-const handledMissedCalls = new Set();
+const handledMissedCalls = new Map();
 
 const MISSED_CALL_TEXT = 'Hi! Sorry we missed your call. How can we help you today?';
+const MISSED_CALL_TTL_MS = 6 * 60 * 60 * 1000;
 
 // Add these values in Replit using the Secrets panel:
 // TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_NUMBER, OPENAI_API_KEY
@@ -46,6 +47,16 @@ async function sendMissedCallText(to) {
   return true;
 }
 
+function pruneHandledMissedCalls() {
+  const now = Date.now();
+
+  for (const [key, createdAt] of handledMissedCalls.entries()) {
+    if (now - createdAt > MISSED_CALL_TTL_MS) {
+      handledMissedCalls.delete(key);
+    }
+  }
+}
+
 app.get('/', (_req, res) => {
   res.json({ ok: true, service: 'AI missed-call text-back system' });
 });
@@ -54,16 +65,19 @@ app.post('/webhook/voice', async (req, res) => {
   const { CallSid, CallStatus, From } = req.body || {};
   const dedupeKey = CallSid || `${From}:${CallStatus}`;
 
+  pruneHandledMissedCalls();
+
   if (!From || !isMissedCall(CallStatus) || handledMissedCalls.has(dedupeKey)) {
     return res.json({ ok: true, textSent: false });
   }
 
-  handledMissedCalls.add(dedupeKey);
+  handledMissedCalls.set(dedupeKey, Date.now());
 
   try {
     const textSent = await sendMissedCallText(From);
     return res.json({ ok: true, textSent });
   } catch (error) {
+    handledMissedCalls.delete(dedupeKey);
     console.error('Failed to send missed-call text:', error);
     return res.status(500).json({ ok: false, textSent: false });
   }

@@ -1,6 +1,10 @@
 const OpenAI = require('openai');
 
 const conversationStore = new Map();
+const conversationTouchedAt = new Map();
+
+const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_CONVERSATIONS = 1000;
 
 const SYSTEM_PROMPT = `
 You are a polite, concise SMS assistant for a local San Diego business.
@@ -57,10 +61,13 @@ const LEAD_TOOL = {
 };
 
 function getConversation(phoneNumber) {
+  pruneConversations();
+
   if (!conversationStore.has(phoneNumber)) {
     conversationStore.set(phoneNumber, []);
   }
 
+  conversationTouchedAt.set(phoneNumber, Date.now());
   return conversationStore.get(phoneNumber);
 }
 
@@ -74,6 +81,29 @@ function appendMessage(phoneNumber, role, content) {
 
   if (messages.length > 20) {
     messages.splice(0, messages.length - 20);
+  }
+}
+
+function pruneConversations() {
+  const now = Date.now();
+
+  for (const [phoneNumber, lastTouchedAt] of conversationTouchedAt.entries()) {
+    if (now - lastTouchedAt > CONVERSATION_TTL_MS) {
+      conversationTouchedAt.delete(phoneNumber);
+      conversationStore.delete(phoneNumber);
+    }
+  }
+
+  while (conversationStore.size > MAX_CONVERSATIONS) {
+    const oldestEntry = conversationTouchedAt.entries().next().value;
+
+    if (!oldestEntry) {
+      break;
+    }
+
+    const [phoneNumber] = oldestEntry;
+    conversationTouchedAt.delete(phoneNumber);
+    conversationStore.delete(phoneNumber);
   }
 }
 
@@ -121,7 +151,7 @@ async function generateReply(phoneNumber, incomingMessage) {
   }
 
   const completion = await client.chat.completions.create({
-    model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
     temperature: 0.4,
     messages: [
       { role: 'system', content: SYSTEM_PROMPT },
