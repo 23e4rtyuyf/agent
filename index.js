@@ -260,8 +260,13 @@ app.get('/api/leads', (_req, res) => {
   return res.json(sortedLeadSummaries());
 });
 
-app.get('/api/leads/:phoneNumber', (req, res) => {
-  const requestedPhoneNumber = normalizePhoneNumber(decodeURIComponent(req.params.phoneNumber || ''));
+app.post('/api/lead-details', (req, res) => {
+  const requestedPhoneNumber = normalizePhoneNumber(req.body?.phoneNumber);
+
+  if (!requestedPhoneNumber) {
+    return res.status(400).json({ ok: false, error: 'Missing phone number.' });
+  }
+
   const lead = leadsByPhone.get(requestedPhoneNumber);
 
   if (!lead) {

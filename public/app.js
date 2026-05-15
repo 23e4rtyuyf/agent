@@ -25,10 +25,6 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-function escapeRouteParam(value) {
-  return encodeURIComponent(value || '');
-}
-
 function getStatusBadgeClass(status) {
   if (status === 'URGENT') {
     return 'border-red-400/20 bg-red-500/10 text-red-100';
@@ -197,7 +193,13 @@ async function loadLeadDetails(phoneNumber) {
   }
 
   try {
-    const response = await fetch(`/api/leads/${escapeRouteParam(phoneNumber)}`);
+    const response = await fetch('/api/lead-details', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ phoneNumber })
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to fetch lead details: ${response.status}`);
