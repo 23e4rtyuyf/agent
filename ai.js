@@ -1,4 +1,4 @@
-const OpenAI = require('openai');
+const { OpenAI } = require('openai');
 
 const conversationStore = new Map();
 const conversationTouchedAt = new Map();
