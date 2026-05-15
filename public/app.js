@@ -65,7 +65,7 @@ function renderConversation() {
   const conversation = document.getElementById('conversation');
   const header = document.getElementById('conversationHeader');
 
-  const selected = state.leads.find((lead) => lead.phone === state.selectedPhone) || state.leads[0];
+  const selected = state.leads.find((lead) => lead.phone === state.selectedPhone) || state.leads[0] || null;
 
   if (!selected) {
     header.textContent = 'Select a lead to view conversation history.';

@@ -87,6 +87,9 @@ let store = loadStore();
 
 function ensureLead(phone) {
   const normalized = normalizePhone(phone);
+  if (!normalized) {
+    throw new Error('A valid phone number is required.');
+  }
   const safePhone = normalized.startsWith('+') ? normalized : `+${normalized}`;
   if (!isSafePhoneKey(safePhone)) {
     throw new Error('A valid phone number is required.');
