@@ -10,6 +10,7 @@ const handledMissedCalls = new Map();
 
 const MISSED_CALL_TEXT = 'Hi! Sorry we missed your call. How can we help you today?';
 const MISSED_CALL_TTL_MS = 6 * 60 * 60 * 1000;
+const FALLBACK_DEDUPE_WINDOW_MS = 2 * 60 * 1000;
 
 // Add these values in Replit using the Secrets panel:
 // TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_NUMBER, OPENAI_API_KEY
@@ -57,13 +58,22 @@ function pruneHandledMissedCalls() {
   }
 }
 
+function getVoiceDedupeKey(payload) {
+  if (payload?.CallSid) {
+    return payload.CallSid;
+  }
+
+  const timeBucket = Math.floor(Date.now() / FALLBACK_DEDUPE_WINDOW_MS);
+  return `fallback:${payload?.From || 'unknown'}:${payload?.CallStatus || 'unknown'}:${timeBucket}`;
+}
+
 app.get('/', (_req, res) => {
   res.json({ ok: true, service: 'AI missed-call text-back system' });
 });
 
 app.post('/webhook/voice', async (req, res) => {
-  const { CallSid, CallStatus, From } = req.body || {};
-  const dedupeKey = CallSid || `${From}:${CallStatus}`;
+  const { CallStatus, From } = req.body || {};
+  const dedupeKey = getVoiceDedupeKey(req.body);
 
   pruneHandledMissedCalls();
 

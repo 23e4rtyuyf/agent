@@ -150,14 +150,19 @@ function parseLead(toolCalls) {
 
 async function generateReply(phoneNumber, incomingMessage) {
   const inboundText = String(incomingMessage || '').trim();
-  appendMessage(phoneNumber, 'user', inboundText || 'Hello');
+
+  if (!inboundText) {
+    const emptyMessageReply = 'Hi! Thanks for reaching out. How can we help you today?';
+    appendMessage(phoneNumber, 'assistant', emptyMessageReply);
+    return { reply: emptyMessageReply, lead: null };
+  }
+
+  appendMessage(phoneNumber, 'user', inboundText);
 
   const client = getOpenAIClient();
 
   if (!client) {
-    const fallbackReply = inboundText
-      ? 'Thanks for texting us. We received your message and a team member will follow up shortly.'
-      : 'Hi! Thanks for reaching out. How can we help you today?';
+    const fallbackReply = 'Thanks for texting us. We received your message and a team member will follow up shortly.';
 
     appendMessage(phoneNumber, 'assistant', fallbackReply);
     return { reply: fallbackReply, lead: null };
