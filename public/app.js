@@ -3,6 +3,15 @@ const state = {
   selectedPhone: null
 };
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function formatTime(iso) {
   if (!iso) return '';
   const date = new Date(iso);
@@ -37,11 +46,11 @@ function renderLeadList() {
     li.className = `cursor-pointer border-b border-slate-800 p-4 transition ${selected ? 'bg-slate-800' : 'hover:bg-slate-800/70'} ${urgent ? 'ring-1 ring-red-500/80' : ''}`;
     li.innerHTML = `
       <div class="flex items-center justify-between">
-        <p class="font-medium">${lead.client_name || 'Unknown Lead'}</p>
+        <p class="font-medium">${escapeHtml(lead.client_name || 'Unknown Lead')}</p>
         ${leadBadge(lead)}
       </div>
-      <p class="mt-1 text-sm text-slate-300">${lead.phone}</p>
-      <p class="mt-1 text-xs text-slate-400">Intent: ${lead.intent || 'Inquiry'} · Missed: ${lead.missed_calls || 0}</p>
+      <p class="mt-1 text-sm text-slate-300">${escapeHtml(lead.phone)}</p>
+      <p class="mt-1 text-xs text-slate-400">Intent: ${escapeHtml(lead.intent || 'Inquiry')} · Missed: ${lead.missed_calls || 0}</p>
     `;
     li.onclick = () => {
       state.selectedPhone = lead.phone;
@@ -69,8 +78,8 @@ function renderConversation() {
   header.innerHTML = `
     <div class="flex items-center justify-between gap-3">
       <div>
-        <p class="font-semibold text-slate-100">${selected.client_name || 'Unknown Lead'} (${selected.phone})</p>
-        <p class="text-xs text-slate-400">Intent: ${selected.intent || 'Inquiry'}</p>
+        <p class="font-semibold text-slate-100">${escapeHtml(selected.client_name || 'Unknown Lead')} (${escapeHtml(selected.phone)})</p>
+        <p class="text-xs text-slate-400">Intent: ${escapeHtml(selected.intent || 'Inquiry')}</p>
       </div>
       ${leadBadge(selected)}
     </div>
@@ -91,7 +100,7 @@ function renderConversation() {
           : 'mx-auto bg-slate-800 text-slate-300';
       return `
         <div class="max-w-[80%] rounded-2xl px-4 py-2 text-sm shadow ${bubbleClass}">
-          <p>${(msg.text || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+          <p>${escapeHtml(msg.text || '')}</p>
           <p class="mt-1 text-[10px] opacity-75">${formatTime(msg.at)}</p>
         </div>
       `;

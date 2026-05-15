@@ -9,6 +9,9 @@ const HOST = '0.0.0.0';
 
 const DATA_FILE = path.join(__dirname, 'index.json');
 const TEMP_DATA_FILE = path.join(__dirname, 'index.json.tmp');
+const VALID_INTENTS = ['Booking', 'Inquiry', 'Maintenance Emergency'];
+const VALID_URGENCY_LEVELS = ['Routine', 'URGENT'];
+const SAFE_PHONE_REGEX = /^\+?\d{7,15}$/;
 
 const openai = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -17,27 +20,60 @@ const openai = process.env.OPENAI_API_KEY
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const normalizePhone = (raw) => String(raw || '').replace(/[^+\d]/g, '');
+const normalizePhone = (raw) => String(raw || '').replace(/[^\d]/g, '');
+const isSafePhoneKey = (phone) => SAFE_PHONE_REGEX.test(phone);
+
+function createEmptyStore() {
+  return { leads: Object.create(null) };
+}
+
+function sanitizeLeads(rawLeads) {
+  const safeLeads = Object.create(null);
+  for (const [key, lead] of Object.entries(rawLeads || {})) {
+    if (!isSafePhoneKey(key) || !lead || typeof lead !== 'object') continue;
+    safeLeads[key] = {
+      phone: key,
+      status: lead.status === 'URGENT' ? 'URGENT' : 'Routine',
+      client_name: typeof lead.client_name === 'string' ? lead.client_name : '',
+      intent: VALID_INTENTS.includes(lead.intent) ? lead.intent : 'Inquiry',
+      urgency_level: lead.urgency_level === 'URGENT' ? 'URGENT' : 'Routine',
+      missed_calls: Number.isFinite(lead.missed_calls) ? Math.max(0, lead.missed_calls) : 0,
+      active: Boolean(lead.active),
+      messages: Array.isArray(lead.messages)
+        ? lead.messages
+            .filter((msg) => msg && typeof msg === 'object')
+            .map((msg) => ({
+              role: ['user', 'assistant', 'system'].includes(msg.role) ? msg.role : 'system',
+              text: typeof msg.text === 'string' ? msg.text : '',
+              at: typeof msg.at === 'string' ? msg.at : new Date().toISOString()
+            }))
+        : [],
+      updated_at: typeof lead.updated_at === 'string' ? lead.updated_at : new Date().toISOString()
+    };
+  }
+  return safeLeads;
+}
 
 function loadStore() {
   try {
     if (!fs.existsSync(DATA_FILE)) {
-      const initial = { leads: {} };
+      const initial = createEmptyStore();
       fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), 'utf8');
       return initial;
     }
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     if (!parsed || typeof parsed !== 'object' || !parsed.leads || typeof parsed.leads !== 'object') {
-      return { leads: {} };
+      return createEmptyStore();
     }
-    return parsed;
+    return { leads: sanitizeLeads(parsed.leads) };
   } catch (error) {
     const fallbackName = `index.corrupt.${Date.now()}.json`;
     const fallbackPath = path.join(__dirname, fallbackName);
     if (fs.existsSync(DATA_FILE)) {
       fs.copyFileSync(DATA_FILE, fallbackPath);
     }
-    return { leads: {} };
+    console.error(`Failed to load ${DATA_FILE}. Backup written to ${fallbackPath}.`, error);
+    return createEmptyStore();
   }
 }
 
@@ -51,13 +87,14 @@ let store = loadStore();
 
 function ensureLead(phone) {
   const normalized = normalizePhone(phone);
-  if (!normalized) {
+  const safePhone = normalized.startsWith('+') ? normalized : `+${normalized}`;
+  if (!isSafePhoneKey(safePhone)) {
     throw new Error('A valid phone number is required.');
   }
 
-  if (!store.leads[normalized]) {
-    store.leads[normalized] = {
-      phone: normalized,
+  if (!Object.prototype.hasOwnProperty.call(store.leads, safePhone)) {
+    store.leads[safePhone] = {
+      phone: safePhone,
       status: 'Routine',
       client_name: '',
       intent: 'Inquiry',
@@ -69,7 +106,7 @@ function ensureLead(phone) {
     };
   }
 
-  return store.leads[normalized];
+  return store.leads[safePhone];
 }
 
 const tools = [
@@ -87,11 +124,11 @@ const tools = [
           },
           intent: {
             type: 'string',
-            enum: ['Booking', 'Inquiry', 'Maintenance Emergency']
+            enum: VALID_INTENTS
           },
           urgency_level: {
             type: 'string',
-            enum: ['Routine', 'URGENT']
+            enum: VALID_URGENCY_LEVELS
           }
         },
         required: ['client_name', 'intent', 'urgency_level']
@@ -139,12 +176,11 @@ async function generateAiReplyAndMetadata(lead, inboundMessage) {
       const parsed = JSON.parse(toolCall.function.arguments || '{}');
       metadata = {
         client_name: typeof parsed.client_name === 'string' ? parsed.client_name.trim() : '',
-        intent: ['Booking', 'Inquiry', 'Maintenance Emergency'].includes(parsed.intent)
-          ? parsed.intent
-          : 'Inquiry',
+        intent: VALID_INTENTS.includes(parsed.intent) ? parsed.intent : 'Inquiry',
         urgency_level: parsed.urgency_level === 'URGENT' ? 'URGENT' : 'Routine'
       };
     } catch (error) {
+      console.error('Failed to parse update_lead_metadata tool arguments.', error);
       metadata = null;
     }
   }
@@ -227,6 +263,7 @@ app.post('/api/inbound', async (req, res) => {
       at: new Date().toISOString()
     });
   } catch (error) {
+    console.error('OpenAI response generation failed.', error);
     lead.messages.push({
       role: 'assistant',
       text: 'Thanks for contacting us. Our team will follow up shortly.',
