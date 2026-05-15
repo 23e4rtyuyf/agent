@@ -168,26 +168,33 @@ async function generateReply(phoneNumber, incomingMessage) {
     return { reply: fallbackReply, lead: null };
   }
 
-  const completion = await client.chat.completions.create({
-    model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-    temperature: 0.4,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...getConversation(phoneNumber)
-    ],
-    tools: [LEAD_TOOL],
-    tool_choice: 'auto'
-  });
+  try {
+    const completion = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+      temperature: 0.4,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        ...getConversation(phoneNumber)
+      ],
+      tools: [LEAD_TOOL],
+      tool_choice: 'auto'
+    });
 
-  const assistantMessage = completion.choices?.[0]?.message || {};
-  const reply = typeof assistantMessage.content === 'string' && assistantMessage.content.trim()
-    ? assistantMessage.content.trim()
-    : 'Thanks for the details. A team member will review this and follow up shortly.';
-  const lead = parseLead(assistantMessage.tool_calls);
+    const assistantMessage = completion.choices?.[0]?.message || {};
+    const reply = typeof assistantMessage.content === 'string' && assistantMessage.content.trim()
+      ? assistantMessage.content.trim()
+      : 'Thanks for the details. A team member will review this and follow up shortly.';
+    const lead = parseLead(assistantMessage.tool_calls);
 
-  appendMessage(phoneNumber, 'assistant', reply);
+    appendMessage(phoneNumber, 'assistant', reply);
 
-  return { reply, lead };
+    return { reply, lead };
+  } catch (error) {
+    console.error('OpenAI API call failed:', error);
+    const fallbackReply = 'Thanks for texting us. We had a temporary issue, but a team member will follow up shortly.';
+    appendMessage(phoneNumber, 'assistant', fallbackReply);
+    return { reply: fallbackReply, lead: null };
+  }
 }
 
 module.exports = {
