@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Revenue Recovery Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <div class="relative overflow-hidden">
+      <div class="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.18),_transparent_35%),radial-gradient(circle_at_right,_rgba(168,85,247,0.18),_transparent_30%)]"></div>
+      <div class="relative mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+        <header class="mb-6 rounded-[28px] border border-white/10 bg-white/5 p-6 shadow-2xl shadow-cyan-950/30 backdrop-blur">
+          <div class="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div class="max-w-2xl">
+              <span class="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200">
+                Replit-ready lead console
+              </span>
+              <h1 class="mt-4 text-3xl font-semibold tracking-tight text-white sm:text-5xl">Missed-call recovery with a dashboard that actually feels premium.</h1>
+              <p class="mt-3 max-w-xl text-sm text-slate-300 sm:text-base">
+                Track missed calls, watch AI conversations unfold, and spot urgent leads fast from one polished live workspace.
+              </p>
+            </div>
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div class="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <p class="text-xs uppercase tracking-[0.24em] text-slate-400">Total leads</p>
+                <p id="total-calls" class="mt-3 text-3xl font-semibold text-white">0</p>
+              </div>
+              <div class="rounded-2xl border border-white/10 bg-slate-900/70 p-4">
+                <p class="text-xs uppercase tracking-[0.24em] text-slate-400">Active threads</p>
+                <p id="active-threads" class="mt-3 text-3xl font-semibold text-white">0</p>
+              </div>
+              <div class="rounded-2xl border border-red-400/20 bg-red-500/10 p-4">
+                <p class="text-xs uppercase tracking-[0.24em] text-red-200/80">Urgent</p>
+                <p id="urgent-leads" class="mt-3 text-3xl font-semibold text-red-100">0</p>
+              </div>
+              <div class="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+                <p class="text-xs uppercase tracking-[0.24em] text-emerald-200/80">Qualified</p>
+                <p id="completed-leads" class="mt-3 text-3xl font-semibold text-emerald-100">0</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <section class="mb-6 grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+          <div class="rounded-[28px] border border-white/10 bg-slate-900/70 p-5 shadow-xl shadow-black/20 backdrop-blur">
+            <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p class="text-xs uppercase tracking-[0.28em] text-slate-400">Pipeline overview</p>
+                <h2 class="mt-2 text-xl font-semibold text-white">Live activity feed</h2>
+              </div>
+              <div class="flex flex-wrap items-center gap-3 text-sm text-slate-300">
+                <label class="relative block min-w-[220px] flex-1">
+                  <span class="sr-only">Search leads</span>
+                  <input
+                    id="search-input"
+                    type="search"
+                    placeholder="Search phone, name, or intent"
+                    class="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/60"
+                  />
+                </label>
+                <div class="rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-3 text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <span id="refresh-indicator" class="mr-2 inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_16px_rgba(74,222,128,0.9)]"></span>
+                  Auto refresh
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-[28px] border border-white/10 bg-gradient-to-br from-cyan-500/15 via-slate-900/90 to-fuchsia-500/15 p-5 shadow-xl shadow-cyan-950/20">
+            <p class="text-xs uppercase tracking-[0.28em] text-slate-300">Status</p>
+            <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 class="text-xl font-semibold text-white">Always-on Replit deployment</h2>
+                <p class="mt-2 max-w-md text-sm text-slate-300">
+                  The app listens on <code class="rounded bg-white/10 px-1.5 py-0.5 text-cyan-100">0.0.0.0:$PORT</code> and exposes Twilio-ready webhook endpoints.
+                </p>
+              </div>
+              <p id="last-updated" class="text-sm text-slate-300">Waiting for first refresh…</p>
+            </div>
+          </div>
+        </section>
+
+        <main class="grid flex-1 gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+          <aside class="overflow-hidden rounded-[30px] border border-white/10 bg-slate-900/80 shadow-2xl shadow-black/30 backdrop-blur">
+            <div class="border-b border-white/10 px-5 py-4">
+              <h2 class="text-lg font-semibold text-white">Lead inbox</h2>
+              <p class="mt-1 text-sm text-slate-400">Newest activity first, with urgency surfaced instantly.</p>
+            </div>
+            <div id="lead-list" class="max-h-[calc(100vh-24rem)] overflow-y-auto"></div>
+          </aside>
+
+          <section class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div class="overflow-hidden rounded-[30px] border border-white/10 bg-slate-900/80 shadow-2xl shadow-black/30 backdrop-blur">
+              <div id="thread-header" class="border-b border-white/10 px-6 py-5">
+                <h2 class="text-lg font-semibold text-white">Conversation detail</h2>
+                <p class="mt-1 text-sm text-slate-400">Choose a lead to inspect the full timeline.</p>
+              </div>
+              <div id="chat-log" class="flex min-h-[560px] flex-col gap-4 bg-gradient-to-b from-slate-900 via-slate-950 to-slate-950 p-6"></div>
+            </div>
+
+            <aside class="grid gap-6 self-start">
+              <div class="rounded-[30px] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/30 backdrop-blur">
+                <p class="text-xs uppercase tracking-[0.28em] text-slate-400">Lead insights</p>
+                <div id="lead-insights" class="mt-4 space-y-3 text-sm text-slate-300">
+                  <p>Select a lead to see AI qualification details.</p>
+                </div>
+              </div>
+              <div class="rounded-[30px] border border-white/10 bg-slate-900/80 p-5 shadow-xl shadow-black/30 backdrop-blur">
+                <p class="text-xs uppercase tracking-[0.28em] text-slate-400">Webhook routes</p>
+                <div class="mt-4 space-y-3 text-sm text-slate-300">
+                  <div class="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
+                    <p class="text-slate-500">Voice</p>
+                    <code class="mt-1 block text-cyan-200">POST /webhook/voice</code>
+                  </div>
+                  <div class="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
+                    <p class="text-slate-500">SMS</p>
+                    <code class="mt-1 block text-cyan-200">POST /webhook/sms</code>
+                  </div>
+                  <div class="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
+                    <p class="text-slate-500">Health</p>
+                    <code class="mt-1 block text-cyan-200">GET /health</code>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
