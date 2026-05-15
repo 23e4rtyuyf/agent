@@ -90,7 +90,7 @@ function ensureLead(phone) {
   if (!normalized) {
     throw new Error('A valid phone number is required.');
   }
-  const safePhone = normalized.startsWith('+') ? normalized : `+${normalized}`;
+  const safePhone = `+${normalized}`;
   if (!isSafePhoneKey(safePhone)) {
     throw new Error('A valid phone number is required.');
   }
