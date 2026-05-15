@@ -1,0 +1,148 @@
+const OpenAI = require('openai');
+
+const conversationStore = new Map();
+
+const SYSTEM_PROMPT = `
+You are a polite, concise SMS assistant for a local San Diego business.
+Your job is to help after a missed call, keep the conversation friendly, and gather:
+1. the customer's name
+2. what they need help with
+3. whether the situation is urgent
+
+Rules:
+- Keep replies brief and natural for SMS.
+- If the customer has not shared their name yet, ask for it naturally.
+- Identify the user's intent in plain language.
+- If the user describes an emergency or immediate safety risk, tell them to call 911 right away.
+- Do not claim an appointment is confirmed unless a human has actually confirmed it.
+- When you have enough information to summarize the lead, call the finalize_lead tool.
+`.trim();
+
+const LEAD_TOOL = {
+  type: 'function',
+  function: {
+    name: 'finalize_lead',
+    description: 'Summarize the lead once enough information is available or urgency is clear.',
+    parameters: {
+      type: 'object',
+      properties: {
+        conversationComplete: {
+          type: 'boolean',
+          description: 'True when you have enough detail for a human follow-up.'
+        },
+        name: {
+          type: 'string',
+          description: 'Customer name if known, otherwise Unknown.'
+        },
+        intent: {
+          type: 'string',
+          description: 'Short description of what the customer wants.'
+        },
+        urgency: {
+          type: 'string',
+          enum: ['Urgent', 'Routine Booking', 'General Question']
+        },
+        emergency: {
+          type: 'boolean',
+          description: 'True if the message indicates an emergency or immediate safety issue.'
+        },
+        summary: {
+          type: 'string',
+          description: 'Brief lead summary for the business.'
+        }
+      },
+      required: ['conversationComplete', 'name', 'intent', 'urgency', 'emergency', 'summary']
+    }
+  }
+};
+
+function getConversation(phoneNumber) {
+  if (!conversationStore.has(phoneNumber)) {
+    conversationStore.set(phoneNumber, []);
+  }
+
+  return conversationStore.get(phoneNumber);
+}
+
+function appendMessage(phoneNumber, role, content) {
+  if (!content) {
+    return;
+  }
+
+  const messages = getConversation(phoneNumber);
+  messages.push({ role, content });
+
+  if (messages.length > 20) {
+    messages.splice(0, messages.length - 20);
+  }
+}
+
+function getOpenAIClient() {
+  if (!process.env.OPENAI_API_KEY) {
+    return null;
+  }
+
+  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
+
+function parseLead(toolCalls) {
+  if (!Array.isArray(toolCalls)) {
+    return null;
+  }
+
+  for (const toolCall of toolCalls) {
+    if (toolCall?.function?.name !== 'finalize_lead') {
+      continue;
+    }
+
+    try {
+      return JSON.parse(toolCall.function.arguments || '{}');
+    } catch (error) {
+      console.error('Failed to parse lead payload:', error);
+    }
+  }
+
+  return null;
+}
+
+async function generateReply(phoneNumber, incomingMessage) {
+  const inboundText = String(incomingMessage || '').trim();
+  appendMessage(phoneNumber, 'user', inboundText || 'Hello');
+
+  const client = getOpenAIClient();
+
+  if (!client) {
+    const fallbackReply = inboundText
+      ? 'Thanks for texting us. We received your message and a team member will follow up shortly.'
+      : 'Hi! Thanks for reaching out. How can we help you today?';
+
+    appendMessage(phoneNumber, 'assistant', fallbackReply);
+    return { reply: fallbackReply, lead: null };
+  }
+
+  const completion = await client.chat.completions.create({
+    model: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
+    temperature: 0.4,
+    messages: [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...getConversation(phoneNumber)
+    ],
+    tools: [LEAD_TOOL],
+    tool_choice: 'auto'
+  });
+
+  const assistantMessage = completion.choices?.[0]?.message || {};
+  const reply = typeof assistantMessage.content === 'string' && assistantMessage.content.trim()
+    ? assistantMessage.content.trim()
+    : 'Thanks for the details. A team member will review this and follow up shortly.';
+  const lead = parseLead(assistantMessage.tool_calls);
+
+  appendMessage(phoneNumber, 'assistant', reply);
+
+  return { reply, lead };
+}
+
+module.exports = {
+  conversationStore,
+  generateReply
+};
