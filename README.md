@@ -9,9 +9,9 @@ This project is a Replit-ready Node.js service that:
 
 ## Files
 
-- `/home/runner/work/reimagined-enigma/reimagined-enigma/index.js` - Express webhook server
-- `/home/runner/work/reimagined-enigma/reimagined-enigma/ai.js` - OpenAI prompt, conversation state, and structured lead extraction
-- `/home/runner/work/reimagined-enigma/reimagined-enigma/package.json` - dependencies and Replit start script
+- `index.js` - Express webhook server
+- `ai.js` - OpenAI prompt, conversation state, and structured lead extraction
+- `package.json` - dependencies and Replit start script
 
 ## Replit setup
 
