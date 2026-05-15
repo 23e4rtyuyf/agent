@@ -1,13 +1,13 @@
 require('dotenv').config();
 
+const path = require('path');
 const express = require('express');
 const twilio = require('twilio');
-const { OpenAI } = require('openai');
-const { MAX_MESSAGES_PER_CONVERSATION } = require('./constants');
+const { generateReply } = require('./ai');
 
 const app = express();
 const handledMissedCalls = new Map();
-const conversations = new Map();
+const leadsByPhone = new Map();
 
 const MISSED_CALL_TEXT = 'Hi! Sorry we missed your call. How can we help you today?';
 const MISSED_CALL_TTL_MS = 6 * 60 * 60 * 1000;
@@ -18,17 +18,7 @@ const FALLBACK_DEDUPE_WINDOW_MS = 2 * 60 * 1000;
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
-const SYSTEM_PROMPT = `
-You are a helpful, polite assistant for a local San Diego business.
-Keep replies concise for SMS. Ask clarifying questions when needed.
-Collect name, intent, and urgency level. If there is an emergency,
-ask the customer to call 911 immediately.
-`.trim();
+app.use(express.static(path.join(__dirname, 'public')));
 
 function isMissedCall(callStatus) {
   return ['busy', 'canceled', 'failed', 'no-answer'].includes(String(callStatus || '').toLowerCase());
@@ -65,59 +55,57 @@ async function sendMissedCallText(to) {
   return true;
 }
 
-function getConversation(phoneNumber) {
-  if (!conversations.has(phoneNumber)) {
-    conversations.set(phoneNumber, []);
+function getLead(phoneNumber) {
+  if (!leadsByPhone.has(phoneNumber)) {
+    leadsByPhone.set(phoneNumber, {
+      phoneNumber,
+      timestamp: new Date().toISOString(),
+      conversationStatus: 'Active',
+      lastMessageSent: '',
+      history: []
+    });
   }
 
-  return conversations.get(phoneNumber);
+  return leadsByPhone.get(phoneNumber);
 }
 
-function appendConversation(phoneNumber, role, content) {
+function appendHistory(phoneNumber, direction, content) {
   if (!content) {
     return;
   }
 
-  const messages = getConversation(phoneNumber);
-  messages.push({ role, content });
-
-  if (messages.length > MAX_MESSAGES_PER_CONVERSATION) {
-    messages.splice(0, messages.length - MAX_MESSAGES_PER_CONVERSATION);
-  }
+  const lead = getLead(phoneNumber);
+  lead.history.push({
+    direction,
+    content: String(content),
+    timestamp: new Date().toISOString()
+  });
 }
 
-async function getAiReply(phoneNumber, incomingMessage) {
-  const normalizedMessage = String(incomingMessage || '').trim();
-  const fallbackReply = normalizedMessage
-    ? 'Thanks for texting us. We received your message and a team member will follow up shortly.'
-    : 'Hi! Thanks for reaching out. How can we help you today?';
+function updateLead(phoneNumber, updates = {}) {
+  const lead = getLead(phoneNumber);
+  lead.timestamp = new Date().toISOString();
+  Object.assign(lead, updates);
+}
 
-  if (!openai) {
-    return fallbackReply;
-  }
+function hasUrgentSignal(leadPayload, incomingText = '') {
+  const urgency = String(leadPayload?.urgency || '').toLowerCase();
+  const emergency = Boolean(leadPayload?.emergency);
+  const incoming = String(incomingText || '').toLowerCase();
+  const keywordMatch = /\b(emergency|urgent|asap|immediately|right now|help now)\b/.test(incoming);
 
-  if (normalizedMessage) {
-    appendConversation(phoneNumber, 'user', normalizedMessage);
-  }
+  return emergency || urgency.includes('urgent') || keywordMatch;
+}
 
-  try {
-    const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      temperature: 0.4,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...getConversation(phoneNumber)
-      ]
-    });
-
-    const aiReply = completion.choices[0].message.content;
-    const replyText = typeof aiReply === 'string' && aiReply.trim() ? aiReply.trim() : fallbackReply;
-    appendConversation(phoneNumber, 'assistant', replyText);
-    return replyText;
-  } catch (error) {
-    console.error('OpenAI API call failed:', error);
-    return fallbackReply;
-  }
+function sortedLeadSummaries() {
+  return Array.from(leadsByPhone.values())
+    .map(({ phoneNumber, timestamp, conversationStatus, lastMessageSent }) => ({
+      phoneNumber,
+      timestamp,
+      conversationStatus,
+      lastMessageSent
+    }))
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
 }
 
 function pruneHandledMissedCalls() {
@@ -139,7 +127,7 @@ function getVoiceDedupeKey(payload) {
   return `fallback:${payload?.From || 'unknown'}:${payload?.CallStatus || 'unknown'}:${timeBucket}`;
 }
 
-app.get('/', (_req, res) => {
+app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'AI missed-call text-back system' });
 });
 
@@ -155,6 +143,11 @@ app.post('/webhook/voice', async (req, res) => {
 
   handledMissedCalls.set(dedupeKey, Date.now());
   const textSent = await sendMissedCallText(From);
+  appendHistory(From, 'assistant', MISSED_CALL_TEXT);
+  updateLead(From, {
+    conversationStatus: 'Active',
+    lastMessageSent: MISSED_CALL_TEXT
+  });
   return res.json({ ok: true, textSent });
 });
 
@@ -166,12 +159,46 @@ app.post('/webhook/sms', async (req, res) => {
     return res.status(400).json({ ok: false, error: 'Missing From number.' });
   }
 
-  const reply = await getAiReply(from, body);
+  appendHistory(from, 'user', body);
+
+  const { reply, lead } = await generateReply(from, body);
+  const urgent = hasUrgentSignal(lead, body);
+  const conversationStatus = urgent
+    ? 'URGENT'
+    : (lead?.conversationComplete ? 'Completed' : 'Active');
+
+  updateLead(from, {
+    conversationStatus,
+    lastMessageSent: reply
+  });
+  appendHistory(from, 'assistant', reply);
+
   const messagingResponse = new twilio.twiml.MessagingResponse();
   messagingResponse.message(reply);
 
   res.type('text/xml');
   return res.send(messagingResponse.toString());
+});
+
+app.get('/api/leads', (_req, res) => {
+  return res.json(sortedLeadSummaries());
+});
+
+app.get('/api/leads/:phoneNumber', (req, res) => {
+  const requestedPhoneNumber = decodeURIComponent(req.params.phoneNumber || '');
+  const lead = leadsByPhone.get(requestedPhoneNumber);
+
+  if (!lead) {
+    return res.status(404).json({ ok: false, error: 'Lead not found.' });
+  }
+
+  return res.json({
+    phoneNumber: lead.phoneNumber,
+    timestamp: lead.timestamp,
+    conversationStatus: lead.conversationStatus,
+    lastMessageSent: lead.lastMessageSent,
+    history: lead.history
+  });
 });
 
 if (require.main === module) {
@@ -184,5 +211,6 @@ if (require.main === module) {
 
 module.exports = {
   app,
-  isMissedCall
+  isMissedCall,
+  leadsByPhone
 };
