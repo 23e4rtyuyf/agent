@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const { OpenAI } = require('openai');
+const { MAX_MESSAGES_PER_CONVERSATION } = require('./constants');
 
 const app = express();
 const handledMissedCalls = new Map();
@@ -11,7 +12,6 @@ const conversations = new Map();
 const MISSED_CALL_TEXT = 'Hi! Sorry we missed your call. How can we help you today?';
 const MISSED_CALL_TTL_MS = 6 * 60 * 60 * 1000;
 const FALLBACK_DEDUPE_WINDOW_MS = 2 * 60 * 1000;
-const MAX_MESSAGES_PER_CONVERSATION = 20;
 
 // Add these values in Replit using the Secrets panel:
 // TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_NUMBER, OPENAI_API_KEY

@@ -1,4 +1,5 @@
 const { OpenAI } = require('openai');
+const { MAX_MESSAGES_PER_CONVERSATION } = require('./constants');
 
 const conversationStore = new Map();
 const conversationTouchedAt = new Map();
@@ -79,8 +80,8 @@ function appendMessage(phoneNumber, role, content) {
   const messages = getConversation(phoneNumber);
   messages.push({ role, content });
 
-  if (messages.length > 20) {
-    messages.splice(0, messages.length - 20);
+  if (messages.length > MAX_MESSAGES_PER_CONVERSATION) {
+    messages.splice(0, messages.length - MAX_MESSAGES_PER_CONVERSATION);
   }
 }
 
