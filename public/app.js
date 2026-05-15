@@ -2,7 +2,11 @@ const state = {
   leads: [],
   selectedPhone: null
 };
-const POLL_INTERVAL_MS = 10000;
+const POLL_INTERVAL_MILLISECONDS = 10000;
+
+function isLeadUrgent(lead) {
+  return lead.status === 'URGENT' || lead.urgency_level === 'URGENT';
+}
 
 function escapeHtml(value) {
   return String(value || '')
@@ -20,7 +24,7 @@ function formatTime(iso) {
 }
 
 function leadBadge(lead) {
-  if (lead.status === 'URGENT' || lead.urgency_level === 'URGENT') {
+  if (isLeadUrgent(lead)) {
     return '<span class="ml-2 inline-flex animate-pulse rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold text-white">URGENT</span>';
   }
   return '<span class="ml-2 inline-flex rounded-full bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white">Routine</span>';
@@ -43,7 +47,7 @@ function renderLeadList() {
   state.leads.forEach((lead) => {
     const li = document.createElement('li');
     const selected = lead.phone === state.selectedPhone;
-    const urgent = lead.status === 'URGENT' || lead.urgency_level === 'URGENT';
+    const urgent = isLeadUrgent(lead);
     li.className = `cursor-pointer border-b border-slate-800 p-4 transition ${selected ? 'bg-slate-800' : 'hover:bg-slate-800/70'} ${urgent ? 'ring-1 ring-red-500/80' : ''}`;
     li.innerHTML = `
       <div class="flex items-center justify-between">
@@ -79,7 +83,7 @@ function renderConversation() {
   }
 
   state.selectedPhone = selected.phone;
-  const urgency = selected.status === 'URGENT' || selected.urgency_level === 'URGENT';
+  const urgency = isLeadUrgent(selected);
   header.innerHTML = `
     <div class="flex items-center justify-between gap-3">
       <div>
@@ -136,4 +140,4 @@ async function refresh() {
 }
 
 refresh();
-setInterval(refresh, POLL_INTERVAL_MS);
+setInterval(refresh, POLL_INTERVAL_MILLISECONDS);

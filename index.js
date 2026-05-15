@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number.parseInt(process.env.PORT || '', 10) || 3000;
 const HOST = '0.0.0.0';
 
 const LEADS_DATA_FILE = path.join(__dirname, 'index.json');
