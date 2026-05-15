@@ -10,7 +10,9 @@ const HOST = '0.0.0.0';
 const DATA_FILE = path.join(__dirname, 'index.json');
 const TEMP_DATA_FILE = path.join(__dirname, 'index.json.tmp');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+  : null;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -99,7 +101,7 @@ const tools = [
 ];
 
 async function generateAiReplyAndMetadata(lead, inboundMessage) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!openai) {
     return {
       reply: 'Thanks for reaching out. We received your message and will respond shortly.',
       metadata: null
