@@ -7,8 +7,8 @@ const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
 
-const DATA_FILE = path.join(__dirname, 'index.json');
-const TEMP_DATA_FILE = path.join(__dirname, 'index.json.tmp');
+const LEADS_DATA_FILE = path.join(__dirname, 'index.json');
+const TEMP_LEADS_DATA_FILE = path.join(__dirname, 'index.json.tmp');
 const VALID_INTENTS = ['Booking', 'Inquiry', 'Maintenance Emergency'];
 const VALID_URGENCY_LEVELS = ['Routine', 'URGENT'];
 const SAFE_PHONE_REGEX = /^\+?\d{7,15}$/;
@@ -56,31 +56,31 @@ function sanitizeLeads(rawLeads) {
 
 function loadStore() {
   try {
-    if (!fs.existsSync(DATA_FILE)) {
+    if (!fs.existsSync(LEADS_DATA_FILE)) {
       const initial = createEmptyStore();
-      fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2), 'utf8');
+      fs.writeFileSync(LEADS_DATA_FILE, JSON.stringify(initial, null, 2), 'utf8');
       return initial;
     }
-    const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const parsed = JSON.parse(fs.readFileSync(LEADS_DATA_FILE, 'utf8'));
     if (!parsed || typeof parsed !== 'object' || !parsed.leads || typeof parsed.leads !== 'object') {
       return createEmptyStore();
     }
     return { leads: sanitizeLeads(parsed.leads) };
   } catch (error) {
-    const fallbackName = `index.corrupt.${Date.now()}.json`;
+    const fallbackName = `leads.corrupt.${Date.now()}.json`;
     const fallbackPath = path.join(__dirname, fallbackName);
-    if (fs.existsSync(DATA_FILE)) {
-      fs.copyFileSync(DATA_FILE, fallbackPath);
+    if (fs.existsSync(LEADS_DATA_FILE)) {
+      fs.copyFileSync(LEADS_DATA_FILE, fallbackPath);
     }
-    console.error(`Failed to load ${DATA_FILE}. Backup written to ${fallbackPath}.`, error);
+    console.error(`Failed to load ${LEADS_DATA_FILE}. Backup written to ${fallbackPath}.`, error);
     return createEmptyStore();
   }
 }
 
 function saveStore(store) {
   const safeData = JSON.stringify(store, null, 2);
-  fs.writeFileSync(TEMP_DATA_FILE, safeData, 'utf8');
-  fs.renameSync(TEMP_DATA_FILE, DATA_FILE);
+  fs.writeFileSync(TEMP_LEADS_DATA_FILE, safeData, 'utf8');
+  fs.renameSync(TEMP_LEADS_DATA_FILE, LEADS_DATA_FILE);
 }
 
 let store = loadStore();
