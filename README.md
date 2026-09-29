@@ -1,49 +1,46 @@
-# Agent
+# Signal Forge Agent
 
-A Replit-ready Node.js app for recovering missed calls, texting leads back automatically, and tracking every conversation in a polished dashboard.
+Signal Forge is an AI-native missed-call recovery platform with a handcrafted intelligence console.
 
-## What this combines from the project branches
+## What it does
 
-- missed-call voice + SMS webhook handling
-- AI-generated lead qualification replies
-- a live browser dashboard for monitoring conversations
-- branch fixes for cleaner startup behavior and richer lead metadata in the UI
+- captures missed calls and sends automatic text-back responses
+- runs AI-driven SMS qualification for name, intent, urgency, and summary
+- scores every lead with opportunity and close-probability heuristics
+- computes real-time operational analytics (pipeline stages, risk watchlist, hourly activity)
+- provides a custom dashboard UI for conversation operations and decision support
 
 ## Replit setup
 
 1. Import this repository into Replit.
-2. Add these secrets in the Replit **Secrets** panel:
+2. Add these secrets in Replit **Secrets**:
    - `TWILIO_ACCOUNT_SID`
    - `TWILIO_AUTH_TOKEN`
    - `TWILIO_NUMBER`
    - `OPENAI_API_KEY`
-3. Install and start the app:
+3. Install and start:
 
    ```bash
    npm install
    npm start
    ```
 
-4. Replit will expose a public URL. Use that URL for your Twilio webhooks.
+## Webhooks
 
-## Twilio webhooks
+Configure Twilio with `POST`:
 
-Configure both endpoints with `POST`:
+- Voice callback: `https://YOUR-REPLIT-URL/webhook/voice`
+- SMS callback: `https://YOUR-REPLIT-URL/webhook/sms`
 
-- Voice / missed call callback: `https://YOUR-REPLIT-URL/webhook/voice`
-- SMS webhook: `https://YOUR-REPLIT-URL/webhook/sms`
+## API endpoints
 
-## Dashboard
-
-Open the Replit app URL in a browser to view the dashboard. It includes:
-
-- lead volume, active threads, urgent leads, and qualified leads
-- searchable lead inbox
-- full conversation timeline
-- AI-generated customer name, intent, urgency, and summary panels
+- `GET /health`
+- `GET /api/leads`
+- `GET /api/analytics`
+- `POST /api/lead-details`
 
 ## Notes
 
-- The app listens on `0.0.0.0` and `process.env.PORT || 3000` for Replit compatibility.
-- If `OPENAI_API_KEY` is missing, the app still responds with safe fallback messages.
-- Lead data is stored in memory for the current process.
+- App listens on `0.0.0.0` and `process.env.PORT || 3000`.
+- If `OPENAI_API_KEY` is missing, fallback responses still keep conversations active.
+- Data is in-memory for the running process.
