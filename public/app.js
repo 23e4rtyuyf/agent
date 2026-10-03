@@ -5,6 +5,7 @@ const elements = {
   urgentLeads: document.getElementById('urgent-leads'),
   completedLeads: document.getElementById('completed-leads'),
   avgScore: document.getElementById('avg-score'),
+  aiOffload: document.getElementById('ai-offload'),
   leadList: document.getElementById('lead-list'),
   chatLog: document.getElementById('chat-log'),
   threadHeader: document.getElementById('thread-header'),
@@ -14,7 +15,9 @@ const elements = {
   stageBreakdown: document.getElementById('stage-breakdown'),
   urgencyBreakdown: document.getElementById('urgency-breakdown'),
   activityHeat: document.getElementById('activity-heat'),
-  watchlist: document.getElementById('watchlist')
+  watchlist: document.getElementById('watchlist'),
+  aiCockpit: document.getElementById('ai-cockpit'),
+  conversionBoard: document.getElementById('conversion-board')
 };
 
 let selectedPhoneNumber = null;
@@ -114,6 +117,51 @@ function renderWatchlist(items = []) {
   if (!Array.isArray(items) || !items.length) {
     elements.watchlist.innerHTML = '<li>No at-risk threads right now.</li>';
     return;
+  }
+
+  function renderAICockpit(ai = {}) {
+    const cards = [
+      ['Credit mode', ai.creditMode || 'balanced'],
+      ['Model calls', ai.modelCalls ?? 0],
+      ['Rule-based calls', ai.ruleBasedCalls ?? 0],
+      ['Fallback calls', ai.fallbackCalls ?? 0],
+      ['Avg reply length', `${ai.avgCharsPerReply ?? 0} chars`],
+      ['Failures', ai.failures ?? 0]
+    ];
+
+    elements.aiCockpit.innerHTML = cards
+      .map(([label, value]) => {
+        return `
+          <div class="stack-row">
+            <div class="meta">
+              <span>${escapeHtml(label)}</span>
+              <span>${escapeHtml(String(value))}</span>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function renderConversionBoard(conversion = {}) {
+    const cards = [
+      ['Qualified rate', `${conversion.qualifiedRate ?? 0}%`],
+      ['Urgent rate', `${conversion.urgentRate ?? 0}%`],
+      ['State transitions', conversion.transitionEvents ?? 0]
+    ];
+
+    elements.conversionBoard.innerHTML = cards
+      .map(([label, value]) => {
+        return `
+          <div class="stack-row">
+            <div class="meta">
+              <span>${escapeHtml(label)}</span>
+              <span>${escapeHtml(String(value))}</span>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
   }
 
   elements.watchlist.innerHTML = items
@@ -245,11 +293,13 @@ function renderGlobalMetrics(leads, analytics) {
   const completed = leads.filter((lead) => lead.conversationStatus === 'Completed').length;
   const urgent = leads.filter((lead) => lead.conversationStatus === 'URGENT').length;
   const avgScore = analytics?.opportunity?.averageScore || 0;
+  const aiOffload = analytics?.ai?.ruleBasedShare || 0;
 
   elements.totalCalls.textContent = String(leads.length);
   elements.completedLeads.textContent = String(completed);
   elements.urgentLeads.textContent = String(urgent);
   elements.avgScore.textContent = String(avgScore);
+  elements.aiOffload.textContent = `${aiOffload}%`;
 }
 
 async function refreshDashboard() {
@@ -269,6 +319,8 @@ async function refreshDashboard() {
     renderStackRows(elements.urgencyBreakdown, analytics?.pipeline?.urgencyCounts, 'No urgency data yet.');
     renderActivityHeat(analytics?.activity?.hourly || []);
     renderWatchlist(analytics?.watchlist || []);
+    renderAICockpit(analytics?.ai || {});
+    renderConversionBoard(analytics?.conversion || {});
 
     renderLeadList();
 

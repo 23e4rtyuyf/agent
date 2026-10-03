@@ -12,6 +12,17 @@ const DEFAULT_MAX_TOKENS = Number.parseInt(process.env.OPENAI_MAX_TOKENS || '220
 const MODEL_COOLDOWN_MS = Number.parseInt(process.env.OPENAI_MODEL_COOLDOWN_MS || '45000', 10);
 const CREDIT_MODE = String(process.env.AI_CREDITS_MODE || 'balanced').toLowerCase();
 
+const aiUsage = {
+  modelCalls: 0,
+  ruleBasedCalls: 0,
+  fallbackCalls: 0,
+  failures: 0,
+  estimatedInputChars: 0,
+  estimatedOutputChars: 0,
+  lastModelCallAt: null,
+  lastRuleBasedAt: null
+};
+
 const SYSTEM_PROMPT = `
 You are a polite, concise SMS assistant for a local service business.
 Your job is to help after a missed call, keep the conversation friendly, and gather:
@@ -98,6 +109,7 @@ function pruneConversations() {
     if (now - lastTouchedAt > CONVERSATION_TTL_MS) {
       conversationTouchedAt.delete(phoneNumber);
       conversationStore.delete(phoneNumber);
+      lastModelCallAtByPhone.delete(phoneNumber);
     }
   }
 
@@ -110,6 +122,7 @@ function pruneConversations() {
 
     conversationTouchedAt.delete(oldestPhoneNumber);
     conversationStore.delete(oldestPhoneNumber);
+    lastModelCallAtByPhone.delete(oldestPhoneNumber);
   }
 }
 
@@ -132,77 +145,77 @@ function getOpenAIClient() {
     return null;
   }
 
-  function classifyUrgency(text) {
-    if (/\b(emergency|urgent|asap|immediately|right now|leak|fire|flood|unsafe)\b/.test(text)) {
-      return { urgency: 'Urgent', emergency: true };
-    }
-
-    if (/\b(book|quote|estimate|appointment|schedule|tomorrow|next week)\b/.test(text)) {
-      return { urgency: 'Routine Booking', emergency: false };
-    }
-
-    return { urgency: 'General Question', emergency: false };
-  }
-
-  function inferIntent(text) {
-    if (/\b(install|installation)\b/.test(text)) return 'Installation request';
-    if (/\b(repair|fix|broken|not working)\b/.test(text)) return 'Repair request';
-    if (/\b(quote|price|cost|estimate)\b/.test(text)) return 'Pricing request';
-    if (/\b(schedule|appointment|availability)\b/.test(text)) return 'Scheduling request';
-    return 'Needs follow-up';
-  }
-
-  function buildRuleBasedLead(inboundText) {
-    const normalized = inboundText.toLowerCase();
-    const { urgency, emergency } = classifyUrgency(normalized);
-    const intent = inferIntent(normalized);
-    const hasEnoughDetail = /\b(my name is|this is|i need|can you|help with)\b/.test(normalized) || normalized.length > 65;
-
-    return {
-      conversationComplete: Boolean(hasEnoughDetail && intent !== 'Needs follow-up'),
-      name: 'Unknown',
-      intent,
-      urgency,
-      emergency,
-      summary: hasEnoughDetail
-        ? `Customer sent ${urgency.toLowerCase()} ${intent.toLowerCase()} details and should receive human follow-up.`
-        : 'Customer reached out and needs follow-up questions for full qualification.'
-    };
-  }
-
-  function buildRuleBasedReply(inboundText, lead) {
-    const normalized = inboundText.toLowerCase();
-
-    if (lead.emergency) {
-      return 'Thanks for the update — if anyone is in immediate danger, please call 911 now. We will prioritize your message right away.';
-    }
-
-    if (/^(ok|k|thanks|thank you|got it|sounds good)[.! ]*$/i.test(normalized)) {
-      return 'Perfect, thanks for confirming. A team member will follow up shortly.';
-    }
-
-    if (lead.intent === 'Pricing request') {
-      return 'Thanks for reaching out. We can help with that quote — can you share the main issue and your preferred timing?';
-    }
-
-    if (lead.intent === 'Scheduling request') {
-      return 'Got it — what day/time works best, and what service do you need?';
-    }
-
-    return 'Thanks for texting us. Could you share your name and a quick summary of what you need help with?';
-  }
-
-  function shouldUseRuleBasedPath(phoneNumber, inboundText) {
-    const normalized = String(inboundText || '').toLowerCase();
-    const lastModelCallAt = lastModelCallAtByPhone.get(phoneNumber) || 0;
-    const inCooldown = Date.now() - lastModelCallAt < MODEL_COOLDOWN_MS;
-    const shortAck = /^(ok|k|thanks|thank you|got it|yes|no|yep|nope)[.! ]*$/i.test(normalized);
-    const lowCreditMode = CREDIT_MODE === 'low';
-
-    return shortAck || (lowCreditMode && normalized.length < 160 && inCooldown);
-  }
-
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+}
+
+function classifyUrgency(text) {
+  if (/\b(emergency|urgent|asap|immediately|right now|leak|fire|flood|unsafe)\b/.test(text)) {
+    return { urgency: 'Urgent', emergency: true };
+  }
+
+  if (/\b(book|quote|estimate|appointment|schedule|tomorrow|next week)\b/.test(text)) {
+    return { urgency: 'Routine Booking', emergency: false };
+  }
+
+  return { urgency: 'General Question', emergency: false };
+}
+
+function inferIntent(text) {
+  if (/\b(install|installation)\b/.test(text)) return 'Installation request';
+  if (/\b(repair|fix|broken|not working)\b/.test(text)) return 'Repair request';
+  if (/\b(quote|price|cost|estimate)\b/.test(text)) return 'Pricing request';
+  if (/\b(schedule|appointment|availability)\b/.test(text)) return 'Scheduling request';
+  return 'Needs follow-up';
+}
+
+function buildRuleBasedLead(inboundText) {
+  const normalized = inboundText.toLowerCase();
+  const { urgency, emergency } = classifyUrgency(normalized);
+  const intent = inferIntent(normalized);
+  const hasEnoughDetail = /\b(my name is|this is|i need|can you|help with)\b/.test(normalized) || normalized.length > 65;
+
+  return {
+    conversationComplete: Boolean(hasEnoughDetail && intent !== 'Needs follow-up'),
+    name: 'Unknown',
+    intent,
+    urgency,
+    emergency,
+    summary: hasEnoughDetail
+      ? `Customer sent ${urgency.toLowerCase()} ${intent.toLowerCase()} details and should receive human follow-up.`
+      : 'Customer reached out and needs follow-up questions for full qualification.'
+  };
+}
+
+function buildRuleBasedReply(inboundText, lead) {
+  const normalized = inboundText.toLowerCase();
+
+  if (lead.emergency) {
+    return 'Thanks for the update — if anyone is in immediate danger, please call 911 now. We will prioritize your message right away.';
+  }
+
+  if (/^(ok|k|thanks|thank you|got it|sounds good)[.! ]*$/i.test(normalized)) {
+    return 'Perfect, thanks for confirming. A team member will follow up shortly.';
+  }
+
+  if (lead.intent === 'Pricing request') {
+    return 'Thanks for reaching out. We can help with that quote — can you share the main issue and your preferred timing?';
+  }
+
+  if (lead.intent === 'Scheduling request') {
+    return 'Got it — what day/time works best, and what service do you need?';
+  }
+
+  return 'Thanks for texting us. Could you share your name and a quick summary of what you need help with?';
+}
+
+function shouldUseRuleBasedPath(phoneNumber, inboundText) {
+  const normalized = String(inboundText || '').toLowerCase();
+  const lastModelCallAt = lastModelCallAtByPhone.get(phoneNumber) || 0;
+  const inCooldown = Date.now() - lastModelCallAt < MODEL_COOLDOWN_MS;
+  const shortAck = /^(ok|k|thanks|thank you|got it|yes|no|yep|nope)[.! ]*$/i.test(normalized);
+  const lowCreditMode = CREDIT_MODE === 'low';
+
+  return shortAck || (lowCreditMode && normalized.length < 160 && inCooldown);
 }
 
 function parseLead(toolCalls) {
@@ -225,21 +238,45 @@ function parseLead(toolCalls) {
   return null;
 }
 
+function getAIUsageMetrics() {
+  const totalReplies = aiUsage.modelCalls + aiUsage.ruleBasedCalls + aiUsage.fallbackCalls;
+  const avgCharsPerReply = totalReplies ? Math.round(aiUsage.estimatedOutputChars / totalReplies) : 0;
+  const ruleBasedShare = totalReplies ? Math.round((aiUsage.ruleBasedCalls / totalReplies) * 100) : 0;
+
+  return {
+    ...aiUsage,
+    totalReplies,
+    avgCharsPerReply,
+    ruleBasedShare,
+    modelName: DEFAULT_MODEL,
+    creditMode: CREDIT_MODE,
+    modelCooldownMs: MODEL_COOLDOWN_MS,
+    maxTokens: Number.isFinite(DEFAULT_MAX_TOKENS) ? DEFAULT_MAX_TOKENS : 220
+  };
+}
+
 async function generateReply(phoneNumber, incomingMessage) {
   const inboundText = String(incomingMessage || '').trim();
 
   if (!inboundText) {
     const emptyMessageReply = 'Hi! Thanks for reaching out. How can we help you today?';
     appendMessage(phoneNumber, 'assistant', emptyMessageReply);
+    aiUsage.ruleBasedCalls += 1;
+    aiUsage.estimatedOutputChars += emptyMessageReply.length;
+    aiUsage.lastRuleBasedAt = new Date().toISOString();
     return { reply: emptyMessageReply, lead: null };
   }
 
   appendMessage(phoneNumber, 'user', inboundText);
+  aiUsage.estimatedInputChars += inboundText.length;
 
   if (shouldUseRuleBasedPath(phoneNumber, inboundText)) {
     const lead = buildRuleBasedLead(inboundText);
     const reply = buildRuleBasedReply(inboundText, lead);
     appendMessage(phoneNumber, 'assistant', reply);
+    aiUsage.ruleBasedCalls += 1;
+    aiUsage.estimatedOutputChars += reply.length;
+    aiUsage.lastRuleBasedAt = new Date().toISOString();
     return { reply, lead };
   }
 
@@ -249,6 +286,8 @@ async function generateReply(phoneNumber, incomingMessage) {
     const fallbackReply = 'Thanks for texting us. We received your message and a team member will follow up shortly.';
 
     appendMessage(phoneNumber, 'assistant', fallbackReply);
+    aiUsage.fallbackCalls += 1;
+    aiUsage.estimatedOutputChars += fallbackReply.length;
     return {
       reply: fallbackReply,
       lead: {
@@ -283,12 +322,18 @@ async function generateReply(phoneNumber, incomingMessage) {
 
     appendMessage(phoneNumber, 'assistant', reply);
     lastModelCallAtByPhone.set(phoneNumber, Date.now());
+    aiUsage.modelCalls += 1;
+    aiUsage.estimatedOutputChars += reply.length;
+    aiUsage.lastModelCallAt = new Date().toISOString();
 
     return { reply, lead };
   } catch (error) {
     console.error('OpenAI API call failed:', error);
     const fallbackReply = 'Thanks for texting us. We had a temporary issue, but a team member will follow up shortly.';
     appendMessage(phoneNumber, 'assistant', fallbackReply);
+    aiUsage.fallbackCalls += 1;
+    aiUsage.failures += 1;
+    aiUsage.estimatedOutputChars += fallbackReply.length;
     return {
       reply: fallbackReply,
       lead: {
@@ -305,5 +350,6 @@ async function generateReply(phoneNumber, incomingMessage) {
 
 module.exports = {
   conversationStore,
-  generateReply
+  generateReply,
+  getAIUsageMetrics
 };

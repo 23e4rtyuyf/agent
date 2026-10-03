@@ -8,6 +8,7 @@ Signal Forge is an AI-native missed-call recovery platform with a handcrafted in
 - runs AI-driven SMS qualification for name, intent, urgency, and summary
 - scores every lead with opportunity and close-probability heuristics
 - computes real-time operational analytics (pipeline stages, risk watchlist, hourly activity)
+- exposes AI efficiency telemetry (model vs rule-based share, fallback rate, response-size proxy)
 - provides a custom dashboard UI for conversation operations and decision support
 
 ## Replit setup

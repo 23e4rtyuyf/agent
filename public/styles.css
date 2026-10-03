@@ -118,7 +118,7 @@ body {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
@@ -186,7 +186,7 @@ input[type='search'] {
 .analytics-grid {
   padding: 0.9rem;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
 }
 
@@ -394,6 +394,10 @@ input[type='search'] {
 
   .insights {
     grid-column: 1 / -1;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .analytics-grid {

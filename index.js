@@ -3,7 +3,7 @@ require('dotenv').config();
 const path = require('path');
 const express = require('express');
 const twilio = require('twilio');
-const { generateReply } = require('./ai');
+const { generateReply, getAIUsageMetrics } = require('./ai');
 
 const app = express();
 const handledMissedCalls = new Map();
@@ -462,6 +462,12 @@ function buildAnalyticsSnapshot() {
   }
 
   const averageScore = summaries.length ? Math.round(totalScore / summaries.length) : 0;
+  const qualifiedLeads = summaries.filter((lead) => lead.conversationStatus === 'Completed').length;
+  const urgentLeads = summaries.filter((lead) => lead.conversationStatus === 'URGENT').length;
+  const activeLeads = summaries.filter((lead) => lead.conversationStatus === 'Active').length;
+  const totalTransitionEvents = Array.from(leadStateHistory.values()).reduce((acc, transitions) => {
+    return acc + (Array.isArray(transitions) ? transitions.length : 0);
+  }, 0);
 
   const watchlist = summaries
     .filter((summary) => {
@@ -479,17 +485,24 @@ function buildAnalyticsSnapshot() {
   return {
     totals: {
       leads: summaries.length,
-      urgent: summaries.filter((lead) => lead.conversationStatus === 'URGENT').length,
-      qualified: summaries.filter((lead) => lead.conversationStatus === 'Completed').length
+      urgent: urgentLeads,
+      qualified: qualifiedLeads,
+      active: activeLeads
     },
     opportunity: {
       averageScore
+    },
+    conversion: {
+      qualifiedRate: summaries.length ? Math.round((qualifiedLeads / summaries.length) * 100) : 0,
+      urgentRate: summaries.length ? Math.round((urgentLeads / summaries.length) * 100) : 0,
+      transitionEvents: totalTransitionEvents
     },
     pipeline: {
       stageCounts,
       urgencyCounts,
       riskCounts
     },
+    ai: getAIUsageMetrics(),
     watchlist,
     activity: {
       hourly: buildHourlyActivity(Array.from(leadsByPhone.values()))
