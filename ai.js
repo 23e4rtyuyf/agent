@@ -3,9 +3,14 @@ const { MAX_MESSAGES_PER_CONVERSATION } = require('./constants');
 
 const conversationStore = new Map();
 const conversationTouchedAt = new Map();
+const lastModelCallAtByPhone = new Map();
 
 const CONVERSATION_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_CONVERSATIONS = 1000;
+const DEFAULT_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const DEFAULT_MAX_TOKENS = Number.parseInt(process.env.OPENAI_MAX_TOKENS || '220', 10);
+const MODEL_COOLDOWN_MS = Number.parseInt(process.env.OPENAI_MODEL_COOLDOWN_MS || '45000', 10);
+const CREDIT_MODE = String(process.env.AI_CREDITS_MODE || 'balanced').toLowerCase();
 
 const SYSTEM_PROMPT = `
 You are a polite, concise SMS assistant for a local service business.
@@ -127,6 +132,76 @@ function getOpenAIClient() {
     return null;
   }
 
+  function classifyUrgency(text) {
+    if (/\b(emergency|urgent|asap|immediately|right now|leak|fire|flood|unsafe)\b/.test(text)) {
+      return { urgency: 'Urgent', emergency: true };
+    }
+
+    if (/\b(book|quote|estimate|appointment|schedule|tomorrow|next week)\b/.test(text)) {
+      return { urgency: 'Routine Booking', emergency: false };
+    }
+
+    return { urgency: 'General Question', emergency: false };
+  }
+
+  function inferIntent(text) {
+    if (/\b(install|installation)\b/.test(text)) return 'Installation request';
+    if (/\b(repair|fix|broken|not working)\b/.test(text)) return 'Repair request';
+    if (/\b(quote|price|cost|estimate)\b/.test(text)) return 'Pricing request';
+    if (/\b(schedule|appointment|availability)\b/.test(text)) return 'Scheduling request';
+    return 'Needs follow-up';
+  }
+
+  function buildRuleBasedLead(inboundText) {
+    const normalized = inboundText.toLowerCase();
+    const { urgency, emergency } = classifyUrgency(normalized);
+    const intent = inferIntent(normalized);
+    const hasEnoughDetail = /\b(my name is|this is|i need|can you|help with)\b/.test(normalized) || normalized.length > 65;
+
+    return {
+      conversationComplete: Boolean(hasEnoughDetail && intent !== 'Needs follow-up'),
+      name: 'Unknown',
+      intent,
+      urgency,
+      emergency,
+      summary: hasEnoughDetail
+        ? `Customer sent ${urgency.toLowerCase()} ${intent.toLowerCase()} details and should receive human follow-up.`
+        : 'Customer reached out and needs follow-up questions for full qualification.'
+    };
+  }
+
+  function buildRuleBasedReply(inboundText, lead) {
+    const normalized = inboundText.toLowerCase();
+
+    if (lead.emergency) {
+      return 'Thanks for the update — if anyone is in immediate danger, please call 911 now. We will prioritize your message right away.';
+    }
+
+    if (/^(ok|k|thanks|thank you|got it|sounds good)[.! ]*$/i.test(normalized)) {
+      return 'Perfect, thanks for confirming. A team member will follow up shortly.';
+    }
+
+    if (lead.intent === 'Pricing request') {
+      return 'Thanks for reaching out. We can help with that quote — can you share the main issue and your preferred timing?';
+    }
+
+    if (lead.intent === 'Scheduling request') {
+      return 'Got it — what day/time works best, and what service do you need?';
+    }
+
+    return 'Thanks for texting us. Could you share your name and a quick summary of what you need help with?';
+  }
+
+  function shouldUseRuleBasedPath(phoneNumber, inboundText) {
+    const normalized = String(inboundText || '').toLowerCase();
+    const lastModelCallAt = lastModelCallAtByPhone.get(phoneNumber) || 0;
+    const inCooldown = Date.now() - lastModelCallAt < MODEL_COOLDOWN_MS;
+    const shortAck = /^(ok|k|thanks|thank you|got it|yes|no|yep|nope)[.! ]*$/i.test(normalized);
+    const lowCreditMode = CREDIT_MODE === 'low';
+
+    return shortAck || (lowCreditMode && normalized.length < 160 && inCooldown);
+  }
+
   return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 }
 
@@ -161,6 +236,13 @@ async function generateReply(phoneNumber, incomingMessage) {
 
   appendMessage(phoneNumber, 'user', inboundText);
 
+  if (shouldUseRuleBasedPath(phoneNumber, inboundText)) {
+    const lead = buildRuleBasedLead(inboundText);
+    const reply = buildRuleBasedReply(inboundText, lead);
+    appendMessage(phoneNumber, 'assistant', reply);
+    return { reply, lead };
+  }
+
   const client = getOpenAIClient();
 
   if (!client) {
@@ -182,8 +264,9 @@ async function generateReply(phoneNumber, incomingMessage) {
 
   try {
     const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      temperature: 0.4,
+      model: DEFAULT_MODEL,
+      temperature: CREDIT_MODE === 'low' ? 0.1 : 0.25,
+      max_tokens: Number.isFinite(DEFAULT_MAX_TOKENS) ? DEFAULT_MAX_TOKENS : 220,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         ...getConversation(phoneNumber)
@@ -199,6 +282,7 @@ async function generateReply(phoneNumber, incomingMessage) {
     const lead = parseLead(assistantMessage.tool_calls);
 
     appendMessage(phoneNumber, 'assistant', reply);
+    lastModelCallAtByPhone.set(phoneNumber, Date.now());
 
     return { reply, lead };
   } catch (error) {

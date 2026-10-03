@@ -18,6 +18,10 @@ Signal Forge is an AI-native missed-call recovery platform with a handcrafted in
    - `TWILIO_AUTH_TOKEN`
    - `TWILIO_NUMBER`
    - `OPENAI_API_KEY`
+   - optional cost controls:
+     - `AI_CREDITS_MODE=low` (more rule-based replies during cooldown windows)
+     - `OPENAI_MAX_TOKENS=220` (cap response tokens)
+     - `OPENAI_MODEL_COOLDOWN_MS=45000` (minimum gap between model calls per lead)
 3. Install and start:
 
    ```bash
