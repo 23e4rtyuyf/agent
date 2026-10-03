@@ -2,15 +2,22 @@ const POLL_INTERVAL_MS = 5000;
 
 const elements = {
   totalCalls: document.getElementById('total-calls'),
-  activeThreads: document.getElementById('active-threads'),
   urgentLeads: document.getElementById('urgent-leads'),
   completedLeads: document.getElementById('completed-leads'),
+  avgScore: document.getElementById('avg-score'),
+  aiOffload: document.getElementById('ai-offload'),
   leadList: document.getElementById('lead-list'),
   chatLog: document.getElementById('chat-log'),
   threadHeader: document.getElementById('thread-header'),
   leadInsights: document.getElementById('lead-insights'),
   searchInput: document.getElementById('search-input'),
-  lastUpdated: document.getElementById('last-updated')
+  lastUpdated: document.getElementById('last-updated'),
+  stageBreakdown: document.getElementById('stage-breakdown'),
+  urgencyBreakdown: document.getElementById('urgency-breakdown'),
+  activityHeat: document.getElementById('activity-heat'),
+  watchlist: document.getElementById('watchlist'),
+  aiCockpit: document.getElementById('ai-cockpit'),
+  conversionBoard: document.getElementById('conversion-board')
 };
 
 let selectedPhoneNumber = null;
@@ -25,20 +32,9 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
-function getStatusBadgeClass(status) {
-  if (status === 'URGENT') {
-    return 'border-red-400/20 bg-red-500/10 text-red-100';
-  }
-
-  if (status === 'Completed') {
-    return 'border-emerald-400/20 bg-emerald-500/10 text-emerald-100';
-  }
-
-  return 'border-cyan-400/20 bg-cyan-500/10 text-cyan-100';
-}
-
 function formatTimestamp(isoString) {
   const date = new Date(isoString);
+
   if (Number.isNaN(date.getTime())) {
     return 'Unknown time';
   }
@@ -46,16 +42,16 @@ function formatTimestamp(isoString) {
   return date.toLocaleString();
 }
 
-function updateMetrics(leads) {
-  const total = leads.length;
-  const active = leads.filter((lead) => lead.conversationStatus === 'Active').length;
-  const urgent = leads.filter((lead) => lead.conversationStatus === 'URGENT').length;
-  const completed = leads.filter((lead) => lead.conversationStatus === 'Completed').length;
+function getBadgeClass(status) {
+  if (status === 'URGENT') {
+    return 'badge badge-urgent';
+  }
 
-  elements.totalCalls.textContent = String(total);
-  elements.activeThreads.textContent = String(active);
-  elements.urgentLeads.textContent = String(urgent);
-  elements.completedLeads.textContent = String(completed);
+  if (status === 'Completed') {
+    return 'badge badge-complete';
+  }
+
+  return 'badge badge-active';
 }
 
 function getFilteredLeads() {
@@ -72,119 +68,200 @@ function getFilteredLeads() {
   });
 }
 
+function renderStackRows(container, values = {}, fallbackLabel) {
+  const entries = Object.entries(values);
+  const total = entries.reduce((acc, [, count]) => acc + Number(count || 0), 0);
+
+  if (!entries.length || total === 0) {
+    container.innerHTML = `<p class="empty">${escapeHtml(fallbackLabel)}</p>`;
+    return;
+  }
+
+  container.innerHTML = entries
+    .map(([label, count]) => {
+      const percent = Math.round((Number(count) / total) * 100);
+      return `
+        <div class="stack-row">
+          <div class="meta">
+            <span>${escapeHtml(label)}</span>
+            <span>${count} (${percent}%)</span>
+          </div>
+          <div class="bar" style="width:${Math.max(percent, 3)}%"></div>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function renderActivityHeat(hourlyActivity = []) {
+  if (!Array.isArray(hourlyActivity) || !hourlyActivity.length) {
+    elements.activityHeat.innerHTML = '<p class="empty">No activity captured yet.</p>';
+    return;
+  }
+
+  const maxValue = Math.max(...hourlyActivity.map((entry) => Number(entry.count || 0)), 1);
+
+  elements.activityHeat.innerHTML = hourlyActivity
+    .slice(-24)
+    .map((entry) => {
+      const count = Number(entry.count || 0);
+      const intensity = Math.round((count / maxValue) * 100);
+      const alpha = (0.16 + intensity / 130).toFixed(2);
+
+      return `<div class="heat-cell" title="${escapeHtml(entry.hour)} • ${count} events" style="background: rgba(90, 209, 255, ${alpha});">${count}</div>`;
+    })
+    .join('');
+}
+
+function renderWatchlist(items = []) {
+  if (!Array.isArray(items) || !items.length) {
+    elements.watchlist.innerHTML = '<li>No at-risk threads right now.</li>';
+    return;
+  }
+
+  function renderAICockpit(ai = {}) {
+    const cards = [
+      ['Credit mode', ai.creditMode || 'balanced'],
+      ['Model calls', ai.modelCalls ?? 0],
+      ['Rule-based calls', ai.ruleBasedCalls ?? 0],
+      ['Fallback calls', ai.fallbackCalls ?? 0],
+      ['Avg reply length', `${ai.avgCharsPerReply ?? 0} chars`],
+      ['Failures', ai.failures ?? 0]
+    ];
+
+    elements.aiCockpit.innerHTML = cards
+      .map(([label, value]) => {
+        return `
+          <div class="stack-row">
+            <div class="meta">
+              <span>${escapeHtml(label)}</span>
+              <span>${escapeHtml(String(value))}</span>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function renderConversionBoard(conversion = {}) {
+    const cards = [
+      ['Qualified rate', `${conversion.qualifiedRate ?? 0}%`],
+      ['Urgent rate', `${conversion.urgentRate ?? 0}%`],
+      ['State transitions', conversion.transitionEvents ?? 0]
+    ];
+
+    elements.conversionBoard.innerHTML = cards
+      .map(([label, value]) => {
+        return `
+          <div class="stack-row">
+            <div class="meta">
+              <span>${escapeHtml(label)}</span>
+              <span>${escapeHtml(String(value))}</span>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  elements.watchlist.innerHTML = items
+    .map((item) => {
+      return `<li><strong>${escapeHtml(item.phoneNumber)}</strong><br/>${escapeHtml(item.reason)}</li>`;
+    })
+    .join('');
+}
+
 function renderLeadList() {
   const leads = getFilteredLeads();
 
   if (!leads.length) {
-    elements.leadList.innerHTML = '<p class="p-5 text-sm text-slate-400">No leads match the current view.</p>';
+    elements.leadList.innerHTML = '<p class="empty">No leads match this query.</p>';
     return;
   }
 
-  const items = leads.map((lead) => {
-    const selected = selectedPhoneNumber === lead.phoneNumber;
-    const statusClass = getStatusBadgeClass(lead.conversationStatus);
-    const leadName = lead.customerName && lead.customerName !== 'Unknown' ? lead.customerName : 'Unknown caller';
-    const subtitle = lead.intent || 'Needs follow-up';
-
-    return `
-      <button
-        class="w-full border-b border-white/5 px-5 py-4 text-left transition hover:bg-white/5 ${selected ? 'bg-white/10' : ''}"
-        data-phone-number="${escapeHtml(lead.phoneNumber)}"
-      >
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <p class="truncate text-sm font-semibold text-white">${escapeHtml(leadName)}</p>
-            <p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(lead.phoneNumber)}</p>
+  elements.leadList.innerHTML = leads
+    .map((lead) => {
+      const score = Number(lead.opportunityScore || 0);
+      const leadName = lead.customerName && lead.customerName !== 'Unknown' ? lead.customerName : 'Unknown caller';
+      return `
+        <button class="lead-item ${selectedPhoneNumber === lead.phoneNumber ? 'active' : ''}" data-phone="${escapeHtml(lead.phoneNumber)}">
+          <div class="lead-head">
+            <div>
+              <div><strong>${escapeHtml(leadName)}</strong></div>
+              <div class="meta-line">${escapeHtml(lead.phoneNumber)}</div>
+            </div>
+            <span class="${getBadgeClass(lead.conversationStatus)}">${escapeHtml(lead.conversationStatus)}</span>
           </div>
-          <span class="rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClass}">${escapeHtml(lead.conversationStatus)}</span>
-        </div>
-        <p class="mt-3 text-sm text-slate-300">${escapeHtml(subtitle)}</p>
-        <p class="mt-2 max-h-10 overflow-hidden text-xs text-slate-400">${escapeHtml(lead.leadSummary || lead.lastMessageSent || 'No updates yet.')}</p>
-        <div class="mt-3 flex items-center justify-between text-[11px] text-slate-500">
-          <span>${escapeHtml(lead.urgency || 'General Question')}</span>
-          <span>${formatTimestamp(lead.timestamp)}</span>
-        </div>
-      </button>
-    `;
-  }).join('');
+          <div class="meta-line">${escapeHtml(lead.intent || 'Needs follow-up')}</div>
+          <div class="meta-line">Score ${score} • ${escapeHtml(lead.pipelineStage || 'New')} • ${escapeHtml(lead.urgency || 'General Question')}</div>
+        </button>
+      `;
+    })
+    .join('');
 
-  elements.leadList.innerHTML = items;
-
-  Array.from(elements.leadList.querySelectorAll('button[data-phone-number]')).forEach((button) => {
+  Array.from(elements.leadList.querySelectorAll('[data-phone]')).forEach((button) => {
     button.addEventListener('click', () => {
-      selectedPhoneNumber = button.dataset.phoneNumber;
+      selectedPhoneNumber = button.dataset.phone;
       renderLeadList();
       void loadLeadDetails(selectedPhoneNumber);
     });
   });
 }
 
-function renderLeadInsights(lead) {
-  const cards = [
-    { label: 'Customer', value: lead.customerName || 'Unknown' },
-    { label: 'Intent', value: lead.intent || 'Needs follow-up' },
-    { label: 'Urgency', value: lead.urgency || 'General Question' },
-    { label: 'Qualified', value: lead.conversationComplete ? 'Yes' : 'Not yet' }
-  ].map((item) => `
-    <div class="rounded-2xl border border-white/10 bg-slate-950/70 p-3">
-      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">${escapeHtml(item.label)}</p>
-      <p class="mt-2 text-sm text-slate-200">${escapeHtml(item.value)}</p>
-    </div>
-  `).join('');
-
-  const summary = `
-    <div class="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
-      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">AI summary</p>
-      <p class="mt-2 text-sm leading-6 text-slate-300">${escapeHtml(lead.leadSummary || 'No summary yet.')}</p>
-    </div>
+function renderThreadHeader(lead) {
+  const leadName = lead.customerName && lead.customerName !== 'Unknown' ? lead.customerName : lead.phoneNumber;
+  elements.threadHeader.innerHTML = `
+    <h2>${escapeHtml(leadName)}</h2>
+    <p>${escapeHtml(lead.intent || 'Needs follow-up')} • ${escapeHtml(lead.conversationStatus)} • Updated ${formatTimestamp(lead.timestamp)}</p>
   `;
-
-  elements.leadInsights.innerHTML = cards + summary;
 }
 
 function renderChatHistory(lead) {
-  const leadName = lead.customerName && lead.customerName !== 'Unknown' ? lead.customerName : lead.phoneNumber;
-
-  elements.threadHeader.innerHTML = `
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      <div>
-        <p class="text-xs uppercase tracking-[0.24em] text-slate-500">Conversation detail</p>
-        <h2 class="mt-2 text-2xl font-semibold text-white">${escapeHtml(leadName)}</h2>
-        <p class="mt-1 text-sm text-slate-400">${escapeHtml(lead.phoneNumber)} • ${escapeHtml(lead.intent || 'Needs follow-up')}</p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        <span class="rounded-full border px-3 py-1 text-xs font-semibold ${getStatusBadgeClass(lead.conversationStatus)}">${escapeHtml(lead.conversationStatus)}</span>
-        <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-300">Updated ${formatTimestamp(lead.timestamp)}</span>
-      </div>
-    </div>
-  `;
-
-  renderLeadInsights(lead);
-
   if (!Array.isArray(lead.history) || !lead.history.length) {
-    elements.chatLog.innerHTML = '<p class="text-sm text-slate-400">No messages for this lead yet.</p>';
+    elements.chatLog.innerHTML = '<p class="empty">No messages available for this lead yet.</p>';
     return;
   }
 
-  const bubbles = lead.history.map((message) => {
-    const isUser = message.direction === 'user';
-    const bubbleClass = isUser
-      ? 'self-end rounded-[24px] rounded-br-md bg-cyan-500 px-4 py-3 text-slate-950'
-      : 'self-start rounded-[24px] rounded-bl-md border border-white/10 bg-white/5 px-4 py-3 text-slate-100';
-    const sender = isUser ? 'Customer' : message.direction === 'system' ? 'System' : 'AI assistant';
-    const channel = message.channel && message.channel !== 'sms' ? ` • ${message.channel}` : '';
+  elements.chatLog.innerHTML = lead.history
+    .map((message) => {
+      const isUser = message.direction === 'user';
+      const sender = isUser ? 'Customer' : message.direction === 'system' ? 'System' : 'AI Assistant';
+      return `
+        <article class="bubble ${isUser ? 'user' : ''}">
+          <p class="bubble-head">${escapeHtml(sender)}${message.channel && message.channel !== 'sms' ? ` • ${escapeHtml(message.channel)}` : ''}</p>
+          <p class="bubble-message">${escapeHtml(message.content)}</p>
+          <p class="bubble-time">${formatTimestamp(message.timestamp)}</p>
+        </article>
+      `;
+    })
+    .join('');
+}
 
-    return `
-      <div class="max-w-[85%] ${bubbleClass}">
-        <p class="text-[11px] font-semibold uppercase tracking-[0.2em] ${isUser ? 'text-slate-900/70' : 'text-slate-400'}">${escapeHtml(sender)}${escapeHtml(channel)}</p>
-        <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6">${escapeHtml(message.content)}</p>
-        <p class="mt-3 text-[11px] ${isUser ? 'text-slate-900/70' : 'text-slate-500'}">${formatTimestamp(message.timestamp)}</p>
-      </div>
-    `;
-  }).join('');
+function renderLeadInsights(lead) {
+  const intelligence = lead.intelligence || {};
 
-  elements.chatLog.innerHTML = bubbles;
-  elements.chatLog.scrollTop = elements.chatLog.scrollHeight;
+  const cards = [
+    { label: 'Pipeline stage', value: lead.pipelineStage || 'New Inquiry' },
+    { label: 'Opportunity score', value: String(lead.opportunityScore ?? 0) },
+    { label: 'Close probability', value: `${lead.closeProbability ?? 0}%` },
+    { label: 'Average response', value: `${intelligence.averageResponseSeconds ?? 0}s` },
+    { label: 'Sentiment', value: intelligence.sentiment || 'Neutral' },
+    { label: 'Next best action', value: intelligence.nextBestAction || 'Monitor thread' },
+    { label: 'Risk level', value: intelligence.riskLevel || 'Low' },
+    { label: 'Qualified', value: lead.conversationComplete ? 'Yes' : 'Not yet' },
+    { label: 'Summary', value: lead.leadSummary || 'No summary yet.' }
+  ];
+
+  elements.leadInsights.innerHTML = cards
+    .map((item) => {
+      return `
+        <article class="insight-card">
+          <p class="label">${escapeHtml(item.label)}</p>
+          <p class="value">${escapeHtml(item.value)}</p>
+        </article>
+      `;
+    })
+    .join('');
 }
 
 async function loadLeadDetails(phoneNumber) {
@@ -195,35 +272,56 @@ async function loadLeadDetails(phoneNumber) {
   try {
     const response = await fetch('/api/lead-details', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ phoneNumber })
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch lead details: ${response.status}`);
+      throw new Error(`Lead details failed with status ${response.status}`);
     }
 
     const lead = await response.json();
+    renderThreadHeader(lead);
     renderChatHistory(lead);
+    renderLeadInsights(lead);
   } catch (error) {
-    elements.chatLog.innerHTML = `<p class="text-sm text-red-300">Unable to load conversation: ${escapeHtml(error.message)}</p>`;
+    elements.chatLog.innerHTML = `<p class="empty">Unable to load conversation: ${escapeHtml(error.message)}</p>`;
   }
 }
 
-async function refreshLeads() {
-  try {
-    const response = await fetch('/api/leads');
+function renderGlobalMetrics(leads, analytics) {
+  const completed = leads.filter((lead) => lead.conversationStatus === 'Completed').length;
+  const urgent = leads.filter((lead) => lead.conversationStatus === 'URGENT').length;
+  const avgScore = analytics?.opportunity?.averageScore || 0;
+  const aiOffload = analytics?.ai?.ruleBasedShare || 0;
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch leads: ${response.status}`);
+  elements.totalCalls.textContent = String(leads.length);
+  elements.completedLeads.textContent = String(completed);
+  elements.urgentLeads.textContent = String(urgent);
+  elements.avgScore.textContent = String(avgScore);
+  elements.aiOffload.textContent = `${aiOffload}%`;
+}
+
+async function refreshDashboard() {
+  try {
+    const [leadsResponse, analyticsResponse] = await Promise.all([fetch('/api/leads'), fetch('/api/analytics')]);
+
+    if (!leadsResponse.ok || !analyticsResponse.ok) {
+      throw new Error(`Failed request (leads ${leadsResponse.status}, analytics ${analyticsResponse.status})`);
     }
 
-    const leads = await response.json();
+    const [leads, analytics] = await Promise.all([leadsResponse.json(), analyticsResponse.json()]);
+
     latestLeads = Array.isArray(leads) ? leads : [];
 
-    updateMetrics(latestLeads);
+    renderGlobalMetrics(latestLeads, analytics);
+    renderStackRows(elements.stageBreakdown, analytics?.pipeline?.stageCounts, 'No stage data yet.');
+    renderStackRows(elements.urgencyBreakdown, analytics?.pipeline?.urgencyCounts, 'No urgency data yet.');
+    renderActivityHeat(analytics?.activity?.hourly || []);
+    renderWatchlist(analytics?.watchlist || []);
+    renderAICockpit(analytics?.ai || {});
+    renderConversionBoard(analytics?.conversion || {});
+
     renderLeadList();
 
     const visibleLeads = getFilteredLeads();
@@ -234,15 +332,20 @@ async function refreshLeads() {
     }
 
     if (selectedPhoneNumber) {
-      const stillExists = latestLeads.some((lead) => lead.phoneNumber === selectedPhoneNumber);
-      if (stillExists) {
+      const exists = latestLeads.some((lead) => lead.phoneNumber === selectedPhoneNumber);
+
+      if (!exists) {
+        selectedPhoneNumber = visibleLeads[0]?.phoneNumber || null;
+      }
+
+      if (selectedPhoneNumber) {
         await loadLeadDetails(selectedPhoneNumber);
       }
     }
 
-    elements.lastUpdated.textContent = `Last updated ${formatTimestamp(new Date().toISOString())}`;
+    elements.lastUpdated.textContent = formatTimestamp(new Date().toISOString());
   } catch (error) {
-    elements.leadList.innerHTML = `<p class="p-5 text-sm text-red-300">Unable to load leads: ${escapeHtml(error.message)}</p>`;
+    elements.leadList.innerHTML = `<p class="empty">Unable to refresh dashboard: ${escapeHtml(error.message)}</p>`;
   }
 }
 
@@ -257,17 +360,10 @@ elements.searchInput.addEventListener('input', () => {
 
   if (selectedPhoneNumber) {
     void loadLeadDetails(selectedPhoneNumber);
-  } else {
-    elements.threadHeader.innerHTML = `
-      <h2 class="text-lg font-semibold text-white">Conversation detail</h2>
-      <p class="mt-1 text-sm text-slate-400">Choose a lead to inspect the full timeline.</p>
-    `;
-    elements.chatLog.innerHTML = '<p class="text-sm text-slate-400">No lead selected.</p>';
-    elements.leadInsights.innerHTML = '<p>Select a lead to see AI qualification details.</p>';
   }
 });
 
-void refreshLeads();
+void refreshDashboard();
 setInterval(() => {
-  void refreshLeads();
+  void refreshDashboard();
 }, POLL_INTERVAL_MS);
